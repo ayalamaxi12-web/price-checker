@@ -1,0 +1,1866 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Price Checker — Comparador de Precios ML</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #1a1a24;
+    --border: #2a2a3a;
+    --accent: #00e5a0;
+    --accent2: #7c5cfc;
+    --warn: #f5a623;
+    --danger: #ff4d6d;
+    --text: #e8e8f0;
+    --muted: #6b6b80;
+    --green: #00e5a0;
+    --yellow: #f5a623;
+    --red: #ff4d6d;
+    --mono: 'DM Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Noise texture */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,10,15,0.95);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+
+  .logo-text {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  .logo-text span { color: var(--accent); }
+
+  .header-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  /* Alert banner */
+  .alert-banner {
+    display: none;
+    background: linear-gradient(90deg, rgba(255,77,109,0.15), rgba(255,77,109,0.05));
+    border-bottom: 1px solid rgba(255,77,109,0.3);
+    padding: 10px 32px;
+    font-size: 13px;
+    color: var(--red);
+    align-items: center;
+    gap: 8px;
+  }
+
+  .alert-banner.visible { display: flex; }
+
+  /* Nav tabs */
+  .nav {
+    display: flex;
+    gap: 2px;
+    padding: 0 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .nav-tab {
+    padding: 14px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--sans);
+    color: var(--muted);
+    cursor: pointer;
+    border: none;
+    background: none;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+  }
+
+  .nav-tab:hover { color: var(--text); }
+  .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Main layout */
+  .main { padding: 28px 32px; max-width: 1600px; margin: 0 auto; position: relative; z-index: 1; }
+
+  /* Panels */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* Stats row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .stat-card.total::before { background: var(--accent2); }
+  .stat-card.ok::before { background: var(--green); }
+  .stat-card.warn::before { background: var(--yellow); }
+  .stat-card.error::before { background: var(--red); }
+
+  .stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-size: 32px;
+    font-weight: 800;
+    font-family: var(--mono);
+    line-height: 1;
+  }
+
+  .stat-card.ok .stat-value { color: var(--green); }
+  .stat-card.warn .stat-value { color: var(--yellow); }
+  .stat-card.error .stat-value { color: var(--red); }
+
+  /* Filters */
+  .filters {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .filter-input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 14px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .filter-input:focus { border-color: var(--accent); }
+
+  .filter-input::placeholder { color: var(--muted); }
+
+  select.filter-input { cursor: pointer; min-width: 160px; }
+
+  .btn {
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--sans);
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { background: #00ffb3; transform: translateY(-1px); }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn-danger { background: rgba(255,77,109,0.15); color: var(--red); border: 1px solid rgba(255,77,109,0.3); }
+  .btn-danger:hover { background: rgba(255,77,109,0.25); }
+
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+
+  /* Table */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .table-scroll { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  th {
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  th:hover { color: var(--text); }
+
+  td {
+    padding: 13px 16px;
+    border-bottom: 1px solid rgba(42,42,58,0.5);
+    font-family: var(--mono);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--sans);
+  }
+
+  .badge-ok { background: rgba(0,229,160,0.12); color: var(--green); border: 1px solid rgba(0,229,160,0.2); }
+  .badge-warn { background: rgba(245,166,35,0.12); color: var(--yellow); border: 1px solid rgba(245,166,35,0.2); }
+  .badge-error { background: rgba(255,77,109,0.12); color: var(--red); border: 1px solid rgba(255,77,109,0.2); }
+
+  .diff-positive { color: var(--red); }
+  .diff-negative { color: var(--green); }
+  .diff-zero { color: var(--muted); }
+
+  td.editable input {
+    background: var(--surface2);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 4px 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    width: 110px;
+    outline: none;
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 80px 20px;
+    color: var(--muted);
+  }
+
+  .empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
+  .empty-state h3 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
+  .empty-state p { font-size: 14px; line-height: 1.6; }
+
+  /* Pagination */
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .page-btns { display: flex; gap: 4px; }
+
+  .page-btn {
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 12px;
+    transition: all 0.15s;
+  }
+
+  .page-btn:hover, .page-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  /* Sources panel */
+  .sources-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-bottom: 28px;
+  }
+
+  .source-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    transition: border-color 0.2s;
+  }
+
+  .source-card.connected { border-color: rgba(0,229,160,0.3); }
+
+  .source-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .source-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .source-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+
+  .conn-status {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+
+  .conn-status.ok { background: rgba(0,229,160,0.12); color: var(--green); }
+  .conn-status.pending { background: rgba(107,107,128,0.12); color: var(--muted); }
+  .conn-status.error { background: rgba(255,77,109,0.12); color: var(--red); }
+
+  .source-field { margin-bottom: 12px; }
+  .source-field label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+
+  .source-field input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .source-field input:focus { border-color: var(--accent); }
+
+  /* Rules panel */
+  .rules-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .rule-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    transition: border-color 0.2s;
+  }
+
+  .rule-card:hover { border-color: var(--accent2); }
+
+  .rule-name {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text);
+    line-height: 1.3;
+  }
+
+  .rule-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .rule-field label {
+    display: block;
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+
+  .rule-field input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .rule-field input:focus { border-color: var(--accent2); }
+
+  .rule-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .rule-toggle input[type=checkbox] { accent-color: var(--accent); }
+
+  /* Import panel */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 60px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+    margin-bottom: 24px;
+  }
+
+  .drop-zone:hover, .drop-zone.dragging {
+    border-color: var(--accent);
+    background: rgba(0,229,160,0.04);
+  }
+
+  .drop-zone .icon { font-size: 40px; margin-bottom: 16px; opacity: 0.5; }
+  .drop-zone h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  .drop-zone p { font-size: 13px; color: var(--muted); }
+
+  /* Column mapper */
+  .mapper-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .mapper-item label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 6px;
+  }
+
+  .mapper-item select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  /* Settings */
+  .settings-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+
+  .settings-section h3 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-row:last-child { border-bottom: none; }
+
+  .settings-label { font-size: 14px; }
+  .settings-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .settings-row input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 12px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    width: 120px;
+    text-align: right;
+    transition: border-color 0.2s;
+  }
+
+  .settings-row input:focus { border-color: var(--accent); }
+
+  /* Preview table */
+  .preview-table {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .preview-table table { font-size: 12px; }
+  .preview-table th { background: var(--surface2); }
+
+  /* Toast */
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 9999;
+  }
+
+  .toast {
+    padding: 12px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: slideIn 0.3s ease;
+    max-width: 320px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+
+  .toast-success { background: rgba(0,229,160,0.15); border: 1px solid rgba(0,229,160,0.3); color: var(--green); }
+  .toast-error { background: rgba(255,77,109,0.15); border: 1px solid rgba(255,77,109,0.3); color: var(--red); }
+  .toast-info { background: rgba(124,92,252,0.15); border: 1px solid rgba(124,92,252,0.3); color: var(--accent2); }
+
+  @keyframes slideIn {
+    from { transform: translateX(100px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    width: 480px;
+    max-width: 95vw;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  }
+
+  .modal h3 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .modal p { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+
+  .modal-field { margin-bottom: 14px; }
+  .modal-field label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+
+  .modal-field input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .modal-field input:focus { border-color: var(--accent); }
+
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+  /* Loading */
+  .loading {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(0,229,160,0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--muted);
+  }
+
+  .ml-seller-info {
+    background: rgba(0,229,160,0.06);
+    border: 1px solid rgba(0,229,160,0.2);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    margin-top: 10px;
+    display: none;
+  }
+
+  .ml-seller-info.visible { display: block; }
+
+  .separator { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+  .tag {
+    display: inline-block;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--muted);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">📊</div>
+    <div class="logo-text">Price<span>Check</span></div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-secondary btn-sm" onclick="exportCSV()">⬇ Exportar CSV</button>
+    <button class="btn btn-primary btn-sm" onclick="runComparison()">⚡ Comparar Ahora</button>
+  </div>
+</div>
+
+<div class="alert-banner" id="alertBanner">
+  <span>⚠</span>
+  <span id="alertText"></span>
+</div>
+
+<div class="nav">
+  <button class="nav-tab active" onclick="showPanel('comparador', this)">📋 Comparador</button>
+  <button class="nav-tab" onclick="showPanel('importar', this)">📤 Importar Ecom</button>
+  <button class="nav-tab" onclick="showPanel('fuentes', this)">🔌 Fuentes de Datos</button>
+  <button class="nav-tab" onclick="showPanel('reglas', this)">⚙ Reglas de Precio</button>
+  <button class="nav-tab" onclick="showPanel('config', this)">🛠 Configuración</button>
+</div>
+
+<div class="main">
+
+  <!-- COMPARADOR -->
+  <div class="panel active" id="panel-comparador">
+    <div class="stats-row">
+      <div class="stat-card total">
+        <div class="stat-label">Total Publicaciones</div>
+        <div class="stat-value" id="statTotal">0</div>
+      </div>
+      <div class="stat-card ok">
+        <div class="stat-label">Precio Correcto ✓</div>
+        <div class="stat-value" id="statOk">0</div>
+      </div>
+      <div class="stat-card warn">
+        <div class="stat-label">Diferencia Menor ⚠</div>
+        <div class="stat-value" id="statWarn">0</div>
+      </div>
+      <div class="stat-card error">
+        <div class="stat-label">Error Crítico ✕</div>
+        <div class="stat-value" id="statError">0</div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <input type="text" class="filter-input" placeholder="🔍 Buscar SKU o título..." id="searchInput" oninput="applyFilters()" style="width:220px">
+      <select class="filter-input" id="filterStatus" onchange="applyFilters()">
+        <option value="">Todos los estados</option>
+        <option value="ok">✓ Correcto</option>
+        <option value="warn">⚠ Diferencia</option>
+        <option value="error">✕ Error</option>
+      </select>
+      <select class="filter-input" id="filterRegla" onchange="applyFilters()">
+        <option value="">Todas las reglas</option>
+      </select>
+      <select class="filter-input" id="filterPM" onchange="applyFilters()">
+        <option value="">Todos los PMs</option>
+        <option value="PM1">PM 1</option>
+        <option value="PM2">PM 2</option>
+        <option value="PM3">PM 3</option>
+        <option value="PM4">PM 4</option>
+      </select>
+      <button class="btn btn-secondary btn-sm" onclick="loadDemoData()">🎲 Demo</button>
+      <button class="btn btn-secondary btn-sm" onclick="clearData()">🗑 Limpiar</button>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortTable('sku')">SKU ↕</th>
+              <th onclick="sortTable('titulo')">Título ↕</th>
+              <th onclick="sortTable('pm')">PM ↕</th>
+              <th onclick="sortTable('regla')">Regla de Precio</th>
+              <th onclick="sortTable('precioBase')">Precio Base</th>
+              <th onclick="sortTable('precioEsperado')">Precio Esperado</th>
+              <th onclick="sortTable('precioML')">Precio en ML</th>
+              <th onclick="sortTable('diferencia')">Diferencia</th>
+              <th>Estado</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr>
+              <td colspan="10">
+                <div class="empty-state">
+                  <div class="icon">📭</div>
+                  <h3>Sin datos aún</h3>
+                  <p>Importá el reporte de Ecom o hacé clic en "Demo" para ver un ejemplo.<br>Luego conectá ML en "Fuentes de Datos" para los precios en tiempo real.</p>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination" id="paginationBar" style="display:none">
+        <span id="paginationInfo"></span>
+        <div class="page-btns" id="pageBtns"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- IMPORTAR -->
+  <div class="panel" id="panel-importar">
+    <div class="section-header">
+      <div class="section-title">📤 Importar Reporte de Ecom</div>
+    </div>
+
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
+         ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+      <div class="icon">📂</div>
+      <h3>Arrastrá el archivo o hacé clic para seleccionar</h3>
+      <p>Soporta CSV y Excel (.xlsx). El archivo es el reporte de publicaciones de Ecom con SKU, precio y regla de precio.</p>
+    </div>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFileSelect(event)">
+
+    <div id="mapperSection" style="display:none">
+      <div class="section-header">
+        <div class="section-title">🗺 Mapeo de Columnas <span class="chip" id="fileNameChip"></span></div>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Asigná las columnas del archivo a los campos necesarios:</p>
+      <div class="mapper-grid" id="mapperGrid"></div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-primary" onclick="applyMapping()">✓ Aplicar y Comparar</button>
+        <button class="btn btn-secondary" onclick="resetImport()">✕ Cancelar</button>
+      </div>
+
+      <hr class="separator">
+
+      <div class="section-title" style="margin-bottom:12px">👁 Vista Previa <span class="chip" id="previewCount"></span></div>
+      <div class="preview-table" id="previewTable"></div>
+    </div>
+  </div>
+
+  <!-- FUENTES -->
+  <div class="panel" id="panel-fuentes">
+    <div class="section-header">
+      <div class="section-title">🔌 Fuentes de Datos</div>
+      <button class="btn btn-primary btn-sm" onclick="runComparison()">⚡ Actualizar Todo</button>
+    </div>
+
+    <div class="sources-grid">
+      <!-- ML -->
+      <div class="source-card" id="mlCard">
+        <div class="source-header">
+          <div class="source-title">
+            <div class="source-icon" style="background:rgba(255,230,0,0.1)">🛒</div>
+            Mercado Libre
+          </div>
+          <span class="conn-status pending" id="mlStatus">Sin conectar</span>
+        </div>
+        <div class="source-field">
+          <label>Access Token</label>
+          <input type="password" id="mlToken" placeholder="APP_USR-XXXXXXXXXX..." oninput="saveConfig()">
+        </div>
+        <div class="source-field">
+          <label>Seller ID (se completa automático)</label>
+          <input type="text" id="mlSellerId" placeholder="Se obtiene al conectar..." readonly>
+        </div>
+        <div class="ml-seller-info" id="mlInfo"></div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-primary btn-sm" onclick="connectML()">Conectar</button>
+          <button class="btn btn-secondary btn-sm" onclick="fetchMLPrices()">↺ Actualizar precios</button>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-top:10px">
+          El token dura 6hs. Obtené uno en <a href="https://developers.mercadolibre.com.ar" target="_blank" style="color:var(--accent)">developers.mercadolibre.com.ar</a>
+        </p>
+      </div>
+
+      <!-- GOOGLE SHEETS -->
+      <div class="source-card" id="sheetsCard">
+        <div class="source-header">
+          <div class="source-title">
+            <div class="source-icon" style="background:rgba(52,168,83,0.1)">📊</div>
+            Google Sheets
+          </div>
+          <span class="conn-status pending" id="sheetsStatus">Sin conectar</span>
+        </div>
+        <div class="source-field">
+          <label>API Key de Google</label>
+          <input type="password" id="sheetsApiKey" placeholder="AIzaSy..." oninput="saveConfig()">
+        </div>
+        <div class="source-field">
+          <label>ID Planilla General</label>
+          <input type="text" id="sheetsId1" placeholder="ID de la URL entre /d/ y /edit" oninput="saveConfig()">
+        </div>
+        <div class="source-field">
+          <label>Hoja (nombre de la pestaña)</label>
+          <input type="text" id="sheetsTab1" placeholder="Ej: Hoja1 o Precios" oninput="saveConfig()">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-primary btn-sm" onclick="connectSheets()">Conectar</button>
+          <button class="btn btn-secondary btn-sm" onclick="fetchSheetData()">↺ Actualizar</button>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-top:10px">
+          La planilla debe ser pública (solo lectura) para usar API Key.
+        </p>
+      </div>
+
+      <!-- ECOM -->
+      <div class="source-card">
+        <div class="source-header">
+          <div class="source-title">
+            <div class="source-icon" style="background:rgba(124,92,252,0.1)">🗄</div>
+            EcomExperts
+          </div>
+          <span class="conn-status pending">Manual</span>
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">
+          EcomExperts no tiene API pública. Exportá el reporte de publicaciones desde el sistema y subilo en la pestaña <strong style="color:var(--text)">Importar Ecom</strong>.
+        </p>
+        <div style="background:var(--surface2);border-radius:8px;padding:14px;font-size:12px;color:var(--muted);line-height:1.8">
+          <strong style="color:var(--text)">Columnas que necesitamos:</strong><br>
+          • SKU / Código de producto<br>
+          • Precio base (Precio ML del sistema)<br>
+          • Regla de precio asignada<br>
+          • PM responsable (opcional)<br>
+          • Título de la publicación (opcional)
+        </div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:14px" onclick="showPanel('importar', document.querySelector('.nav-tab:nth-child(2)'))">📤 Ir a Importar</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>📋 Planillas de PMs adicionales</h3>
+      <div id="pmSheets">
+        <div class="source-field" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:block;margin-bottom:6px">PM 1 — ID de planilla</label>
+            <input type="text" class="filter-input" id="pmSheet1" placeholder="ID del spreadsheet" style="width:100%" oninput="saveConfig()">
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:block;margin-bottom:6px">Nombre de hoja</label>
+            <input type="text" class="filter-input" id="pmTab1" placeholder="Ej: Cristian" style="width:100%" oninput="saveConfig()">
+          </div>
+        </div>
+        <div class="source-field" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:block;margin-bottom:6px">PM 2 — ID de planilla</label>
+            <input type="text" class="filter-input" id="pmSheet2" placeholder="ID del spreadsheet" style="width:100%" oninput="saveConfig()">
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:block;margin-bottom:6px">Nombre de hoja</label>
+            <input type="text" class="filter-input" id="pmTab2" placeholder="Ej: Matias" style="width:100%" oninput="saveConfig()">
+          </div>
+        </div>
+        <div class="source-field" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:block;margin-bottom:6px">PM 3 — ID de planilla</label>
+            <input type="text" class="filter-input" id="pmSheet3" placeholder="ID del spreadsheet" style="width:100%" oninput="saveConfig()">
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:block;margin-bottom:6px">Nombre de hoja</label>
+            <input type="text" class="filter-input" id="pmTab3" placeholder="Ej: Laura" style="width:100%" oninput="saveConfig()">
+          </div>
+        </div>
+        <div class="source-field" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:block;margin-bottom:6px">PM 4 — ID de planilla</label>
+            <input type="text" class="filter-input" id="pmSheet4" placeholder="ID del spreadsheet" style="width:100%" oninput="saveConfig()">
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:block;margin-bottom:6px">Nombre de hoja</label>
+            <input type="text" class="filter-input" id="pmTab4" placeholder="Ej: Roberto" style="width:100%" oninput="saveConfig()">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REGLAS -->
+  <div class="panel" id="panel-reglas">
+    <div class="section-header">
+      <div class="section-title">⚙ Reglas de Precio <span class="chip" id="rulesCount"></span></div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-secondary btn-sm" onclick="resetRules()">↺ Restaurar</button>
+        <button class="btn btn-primary btn-sm" onclick="saveRulesAndRecalc()">💾 Guardar y Recalcular</button>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px">Editá el porcentaje adicional y el costo de envío de cada regla. El envío se suma cuando el precio base ≥ al umbral configurado.</p>
+    <div class="rules-grid" id="rulesGrid"></div>
+  </div>
+
+  <!-- CONFIG -->
+  <div class="panel" id="panel-config">
+    <div class="section-title" style="margin-bottom:20px">🛠 Configuración General</div>
+
+    <div class="settings-section">
+      <h3>📦 Envío Gratis</h3>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Umbral de envío gratis</div>
+          <div class="settings-desc">Precio mínimo en ML a partir del cual el sistema suma el costo de envío</div>
+        </div>
+        <input type="number" id="cfgShippingThreshold" value="33000" onchange="saveConfig()">
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Costo de envío por defecto</div>
+          <div class="settings-desc">Monto a sumar cuando no se conoce el último costo real</div>
+        </div>
+        <input type="number" id="cfgShippingCost" value="2500" onchange="saveConfig()">
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>🎯 Tolerancias de Discrepancia</h3>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Tolerancia verde (OK)</div>
+          <div class="settings-desc">Diferencia máxima en % para considerar el precio correcto</div>
+        </div>
+        <input type="number" id="cfgTolOk" value="0.5" step="0.1" onchange="saveConfig()">
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Tolerancia amarilla (Advertencia)</div>
+          <div class="settings-desc">Diferencia máxima en % antes de marcar como error crítico</div>
+        </div>
+        <input type="number" id="cfgTolWarn" value="2" step="0.1" onchange="saveConfig()">
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>🔔 Notificaciones</h3>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Alerta de errores críticos</div>
+          <div class="settings-desc">Mostrar banner cuando hay publicaciones con error crítico</div>
+        </div>
+        <input type="checkbox" id="cfgAlerts" checked onchange="saveConfig()" style="width:auto;accent-color:var(--accent)">
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Modal corrección -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h3>✏ Corregir Precio</h3>
+    <p id="editModalDesc">Modificá el precio base del sistema para esta publicación.</p>
+    <div class="modal-field">
+      <label>SKU</label>
+      <input type="text" id="editSku" readonly>
+    </div>
+    <div class="modal-field">
+      <label>Precio Base (Sistema Ecom)</label>
+      <input type="number" id="editPrecioBase" placeholder="0">
+    </div>
+    <div class="modal-field">
+      <label>Precio en ML (actual)</label>
+      <input type="number" id="editPrecioML" placeholder="0">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="applyEdit()">Aplicar Corrección</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===========================
+// REGLAS DE PRECIO REALES
+// ===========================
+let rules = [
+  { id: 'ml_unitario', name: 'ML Unitario', pct: 0, addShipping: false },
+  { id: 'ml_premium_3c', name: 'ML Unitario Premium 3 Cuotas', pct: 15, addShipping: true },
+  { id: 'ml_premium_6c', name: 'ML Unitario Premium 6 Cuotas', pct: 20, addShipping: true },
+  { id: 'ml_premium_9c', name: 'ML Unitario Premium 9 Cuotas', pct: 25, addShipping: true },
+  { id: 'ml_premium_12c', name: 'ML Unitario Premium 12 Cuotas', pct: 35, addShipping: true },
+  { id: 'ml_mayor_3c', name: '3 Cuotas Mayorista', pct: 15, addShipping: true },
+  { id: 'ml_mayor_12c', name: '12 Cuotas Mayorista', pct: 50, addShipping: true },
+  { id: 'ml_fravega', name: 'ML Precio Fravega', pct: 0, addShipping: true },
+  { id: 'ml_fravega_3c', name: 'ML Precio Fravega 3 Cuotas', pct: 15, addShipping: true },
+  { id: 'ml_fravega_6c', name: 'ML Precio Fravega 6 Cuotas', pct: 20, addShipping: true },
+  { id: 'ml_fravega_12c', name: 'ML Precio Fravega 12 Cuotas', pct: 35, addShipping: true },
+  { id: 'ml_lista1', name: 'ML Lista 1 Táctica', pct: 0, addShipping: true },
+  { id: 'ml_lista1_3c', name: 'ML Lista 1 Táctica 3 Cuotas', pct: 15, addShipping: true },
+  { id: 'ml_lista1_6c', name: 'ML Lista 1 Táctica 6 Cuotas', pct: 20, addShipping: true },
+  { id: 'ml_lista1_12c', name: 'ML Lista 1 Táctica 12 Cuotas', pct: 35, addShipping: true },
+  { id: 'ml_lista2', name: 'ML Lista 2 Táctica', pct: 0, addShipping: true },
+  { id: 'ml_lista2_3c', name: 'ML Lista 2 Táctica 3 Cuotas', pct: 15, addShipping: true },
+  { id: 'ml_lista2_6c', name: 'ML Lista 2 Táctica 6 Cuotas', pct: 20, addShipping: true },
+  { id: 'ml_lista2_12c', name: 'ML Lista 2 Táctica 12 Cuotas', pct: 35, addShipping: true },
+  { id: 'ml_web', name: 'ML Precio Web', pct: 0, addShipping: true },
+  { id: 'ml_web2', name: 'ML Precio Web 2', pct: 0, addShipping: true },
+  { id: 'ecom', name: 'Ecom', pct: 0, addShipping: true },
+  { id: 'kit_unitario', name: 'Kit Unitario', pct: 0, addShipping: false },
+  { id: 'kit_premium_6c', name: 'Kit Premium 6 Cuotas', pct: 20, addShipping: true },
+];
+
+// Config
+let config = {
+  shippingThreshold: 33000,
+  shippingCost: 2500,
+  tolOk: 0.5,
+  tolWarn: 2,
+  alerts: true,
+  mlToken: '',
+  mlSellerId: '',
+  sheetsApiKey: '',
+  sheetsId1: '',
+  sheetsTab1: '',
+  pmSheet1: '', pmTab1: '',
+  pmSheet2: '', pmTab2: '',
+  pmSheet3: '', pmTab3: '',
+  pmSheet4: '', pmTab4: '',
+};
+
+// State
+let allData = [];
+let filteredData = [];
+let fileData = [];
+let fileColumns = [];
+let currentPage = 1;
+const PER_PAGE = 30;
+let sortKey = '';
+let sortDir = 1;
+let editingIdx = null;
+
+// ===========================
+// INIT
+// ===========================
+function init() {
+  loadConfig();
+  renderRules();
+  populateRuleFilter();
+  updateStats();
+}
+
+function loadConfig() {
+  try {
+    const saved = localStorage.getItem('pcConfig');
+    if (saved) config = { ...config, ...JSON.parse(saved) };
+    const savedRules = localStorage.getItem('pcRules');
+    if (savedRules) rules = JSON.parse(savedRules);
+    const savedData = localStorage.getItem('pcData');
+    if (savedData) { allData = JSON.parse(savedData); filteredData = [...allData]; }
+  } catch(e) {}
+
+  // Apply to UI
+  document.getElementById('cfgShippingThreshold').value = config.shippingThreshold;
+  document.getElementById('cfgShippingCost').value = config.shippingCost;
+  document.getElementById('cfgTolOk').value = config.tolOk;
+  document.getElementById('cfgTolWarn').value = config.tolWarn;
+  document.getElementById('cfgAlerts').checked = config.alerts;
+  if (config.mlToken) document.getElementById('mlToken').value = config.mlToken;
+  if (config.mlSellerId) document.getElementById('mlSellerId').value = config.mlSellerId;
+  if (config.sheetsApiKey) document.getElementById('sheetsApiKey').value = config.sheetsApiKey;
+  if (config.sheetsId1) document.getElementById('sheetsId1').value = config.sheetsId1;
+  if (config.sheetsTab1) document.getElementById('sheetsTab1').value = config.sheetsTab1;
+  ['1','2','3','4'].forEach(n => {
+    const s = document.getElementById('pmSheet'+n); if(s) s.value = config['pmSheet'+n]||'';
+    const t = document.getElementById('pmTab'+n); if(t) t.value = config['pmTab'+n]||'';
+  });
+
+  if (allData.length > 0) { renderTable(); updateStats(); checkAlerts(); }
+}
+
+function saveConfig() {
+  config.shippingThreshold = parseFloat(document.getElementById('cfgShippingThreshold').value) || 33000;
+  config.shippingCost = parseFloat(document.getElementById('cfgShippingCost').value) || 2500;
+  config.tolOk = parseFloat(document.getElementById('cfgTolOk').value) || 0.5;
+  config.tolWarn = parseFloat(document.getElementById('cfgTolWarn').value) || 2;
+  config.alerts = document.getElementById('cfgAlerts').checked;
+  config.mlToken = document.getElementById('mlToken').value;
+  config.mlSellerId = document.getElementById('mlSellerId').value;
+  config.sheetsApiKey = document.getElementById('sheetsApiKey').value;
+  config.sheetsId1 = document.getElementById('sheetsId1').value;
+  config.sheetsTab1 = document.getElementById('sheetsTab1').value;
+  ['1','2','3','4'].forEach(n => {
+    config['pmSheet'+n] = document.getElementById('pmSheet'+n)?.value||'';
+    config['pmTab'+n] = document.getElementById('pmTab'+n)?.value||'';
+  });
+  localStorage.setItem('pcConfig', JSON.stringify(config));
+}
+
+// ===========================
+// PRICE CALCULATION
+// ===========================
+function calcExpectedPrice(precioBase, ruleId) {
+  const rule = rules.find(r => r.id === ruleId) || rules.find(r => r.name === ruleId);
+  if (!rule) return precioBase;
+  let price = precioBase * (1 + rule.pct / 100);
+  if (rule.addShipping && price >= config.shippingThreshold) {
+    price += config.shippingCost;
+  }
+  return Math.round(price);
+}
+
+function getStatus(expected, actual) {
+  if (!actual || actual === 0) return 'warn';
+  const diff = Math.abs((actual - expected) / expected * 100);
+  if (diff <= config.tolOk) return 'ok';
+  if (diff <= config.tolWarn) return 'warn';
+  return 'error';
+}
+
+function recalcAll() {
+  allData = allData.map(item => {
+    const expected = calcExpectedPrice(item.precioBase, item.reglaId || item.regla);
+    const status = getStatus(expected, item.precioML);
+    const diff = item.precioML ? item.precioML - expected : null;
+    return { ...item, precioEsperado: expected, diferencia: diff, estado: status };
+  });
+  filteredData = [...allData];
+  localStorage.setItem('pcData', JSON.stringify(allData));
+}
+
+// ===========================
+// RENDER TABLE
+// ===========================
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  const start = (currentPage - 1) * PER_PAGE;
+  const pageData = filteredData.slice(start, start + PER_PAGE);
+
+  if (filteredData.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state"><div class="icon">🔍</div><h3>Sin resultados</h3><p>Cambiá los filtros para ver más datos.</p></div></td></tr>`;
+    document.getElementById('paginationBar').style.display = 'none';
+    return;
+  }
+
+  tbody.innerHTML = pageData.map((item, i) => {
+    const idx = start + i;
+    const badgeClass = item.estado === 'ok' ? 'badge-ok' : item.estado === 'warn' ? 'badge-warn' : 'badge-error';
+    const badgeLabel = item.estado === 'ok' ? '✓ OK' : item.estado === 'warn' ? '⚠ Diferencia' : '✕ Error';
+    const diffClass = item.diferencia === null ? 'diff-zero' : item.diferencia > 0 ? 'diff-positive' : 'diff-negative';
+    const diffText = item.diferencia === null ? '—' : (item.diferencia > 0 ? '+' : '') + fmt(item.diferencia);
+
+    return `<tr>
+      <td><span class="tag">${item.sku || '—'}</span></td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-family:var(--sans);font-size:12px">${item.titulo || '—'}</td>
+      <td style="color:var(--muted)">${item.pm || '—'}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${item.regla || '—'}</td>
+      <td>${fmt(item.precioBase)}</td>
+      <td style="color:var(--accent)">${fmt(item.precioEsperado)}</td>
+      <td class="${item.precioML ? '' : 'diff-zero'}">${item.precioML ? fmt(item.precioML) : '—'}</td>
+      <td class="${diffClass}">${diffText}</td>
+      <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
+      <td>${item.estado !== 'ok' ? `<button class="btn btn-secondary btn-sm" onclick="openEdit(${idx})">✏ Corregir</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+
+  renderPagination();
+}
+
+function fmt(n) {
+  if (n === null || n === undefined) return '—';
+  return '$' + Math.round(n).toLocaleString('es-AR');
+}
+
+function renderPagination() {
+  const bar = document.getElementById('paginationBar');
+  const totalPages = Math.ceil(filteredData.length / PER_PAGE);
+  if (totalPages <= 1) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+
+  const start = (currentPage - 1) * PER_PAGE + 1;
+  const end = Math.min(currentPage * PER_PAGE, filteredData.length);
+  document.getElementById('paginationInfo').textContent = `Mostrando ${start}–${end} de ${filteredData.length}`;
+
+  let btns = '';
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 2) {
+      btns += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+    } else if (Math.abs(i - currentPage) === 3) {
+      btns += `<button class="page-btn" disabled>…</button>`;
+    }
+  }
+  document.getElementById('pageBtns').innerHTML = btns;
+}
+
+function goPage(n) {
+  currentPage = n;
+  renderTable();
+}
+
+function updateStats() {
+  const total = allData.length;
+  const ok = allData.filter(d => d.estado === 'ok').length;
+  const warn = allData.filter(d => d.estado === 'warn').length;
+  const error = allData.filter(d => d.estado === 'error').length;
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statOk').textContent = ok;
+  document.getElementById('statWarn').textContent = warn;
+  document.getElementById('statError').textContent = error;
+  checkAlerts();
+}
+
+function checkAlerts() {
+  const errors = allData.filter(d => d.estado === 'error').length;
+  const banner = document.getElementById('alertBanner');
+  if (config.alerts && errors > 0) {
+    banner.classList.add('visible');
+    document.getElementById('alertText').textContent = `Hay ${errors} publicación${errors > 1 ? 'es' : ''} con error crítico de precio. Revisalas en el Comparador.`;
+  } else {
+    banner.classList.remove('visible');
+  }
+}
+
+// ===========================
+// FILTERS & SORT
+// ===========================
+function applyFilters() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const status = document.getElementById('filterStatus').value;
+  const regla = document.getElementById('filterRegla').value;
+  const pm = document.getElementById('filterPM').value;
+
+  filteredData = allData.filter(item => {
+    if (search && !((item.sku || '').toLowerCase().includes(search) || (item.titulo || '').toLowerCase().includes(search))) return false;
+    if (status && item.estado !== status) return false;
+    if (regla && item.regla !== regla) return false;
+    if (pm && item.pm !== pm) return false;
+    return true;
+  });
+
+  currentPage = 1;
+  renderTable();
+}
+
+function sortTable(key) {
+  if (sortKey === key) sortDir *= -1;
+  else { sortKey = key; sortDir = 1; }
+  filteredData.sort((a, b) => {
+    const av = a[key] || 0; const bv = b[key] || 0;
+    return typeof av === 'string' ? av.localeCompare(bv) * sortDir : (av - bv) * sortDir;
+  });
+  renderTable();
+}
+
+function populateRuleFilter() {
+  const sel = document.getElementById('filterRegla');
+  sel.innerHTML = '<option value="">Todas las reglas</option>';
+  rules.forEach(r => {
+    sel.innerHTML += `<option value="${r.name}">${r.name}</option>`;
+  });
+}
+
+// ===========================
+// EDIT MODAL
+// ===========================
+function openEdit(idx) {
+  editingIdx = idx;
+  const item = filteredData[idx];
+  document.getElementById('editSku').value = item.sku || '';
+  document.getElementById('editPrecioBase').value = item.precioBase || '';
+  document.getElementById('editPrecioML').value = item.precioML || '';
+  document.getElementById('editModalDesc').textContent = `${item.titulo || item.sku} — Regla: ${item.regla}`;
+  document.getElementById('editModal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('editModal').classList.remove('open'); }
+
+function applyEdit() {
+  if (editingIdx === null) return;
+  const item = filteredData[editingIdx];
+  const newBase = parseFloat(document.getElementById('editPrecioBase').value);
+  const newML = parseFloat(document.getElementById('editPrecioML').value);
+
+  const dataIdx = allData.findIndex(d => d.sku === item.sku);
+  if (dataIdx >= 0) {
+    allData[dataIdx].precioBase = newBase || allData[dataIdx].precioBase;
+    allData[dataIdx].precioML = newML || allData[dataIdx].precioML;
+  }
+
+  recalcAll();
+  applyFilters();
+  updateStats();
+  closeModal();
+  toast('Precio actualizado y recalculado.', 'success');
+}
+
+// ===========================
+// RULES
+// ===========================
+function renderRules() {
+  document.getElementById('rulesCount').textContent = rules.length;
+  document.getElementById('rulesGrid').innerHTML = rules.map((r, i) => `
+    <div class="rule-card">
+      <div class="rule-name">${r.name}</div>
+      <div class="rule-fields">
+        <div class="rule-field">
+          <label>% Adicional</label>
+          <input type="number" value="${r.pct}" step="0.5" onchange="rules[${i}].pct=parseFloat(this.value)||0">
+        </div>
+        <div class="rule-field">
+          <label>Costo Envío $</label>
+          <input type="number" value="${r.shippingCost !== undefined ? r.shippingCost : ''}" placeholder="Global" onchange="rules[${i}].shippingCost=parseFloat(this.value)||undefined">
+        </div>
+      </div>
+      <label class="rule-toggle">
+        <input type="checkbox" ${r.addShipping ? 'checked' : ''} onchange="rules[${i}].addShipping=this.checked">
+        Suma envío si ≥ umbral
+      </label>
+    </div>
+  `).join('');
+}
+
+function saveRulesAndRecalc() {
+  localStorage.setItem('pcRules', JSON.stringify(rules));
+  recalcAll();
+  applyFilters();
+  updateStats();
+  populateRuleFilter();
+  renderRules();
+  toast('Reglas guardadas y precios recalculados.', 'success');
+}
+
+function resetRules() {
+  localStorage.removeItem('pcRules');
+  location.reload();
+}
+
+// ===========================
+// FILE IMPORT
+// ===========================
+function handleDragOver(e) { e.preventDefault(); document.getElementById('dropZone').classList.add('dragging'); }
+function handleDragLeave() { document.getElementById('dropZone').classList.remove('dragging'); }
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('dragging');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+}
+function handleFileSelect(e) { const file = e.target.files[0]; if (file) processFile(file); }
+
+function processFile(file) {
+  document.getElementById('fileNameChip').textContent = file.name;
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'csv') {
+    const reader = new FileReader();
+    reader.onload = e => parseCSV(e.target.result);
+    reader.readAsText(file, 'UTF-8');
+  } else if (ext === 'xlsx' || ext === 'xls') {
+    toast('Para Excel, por favor exportá como CSV desde Ecom y volvé a intentar.', 'info');
+  }
+}
+
+function parseCSV(text) {
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length < 2) { toast('El archivo parece estar vacío.', 'error'); return; }
+
+  // Detect separator
+  const sep = lines[0].includes(';') ? ';' : ',';
+  fileColumns = lines[0].split(sep).map(c => c.trim().replace(/"/g, ''));
+  fileData = lines.slice(1).map(line => {
+    const vals = line.split(sep).map(v => v.trim().replace(/"/g, ''));
+    const obj = {};
+    fileColumns.forEach((col, i) => { obj[col] = vals[i] || ''; });
+    return obj;
+  });
+
+  showMapper();
+  showPreview();
+}
+
+function showMapper() {
+  const fields = [
+    { key: 'sku', label: 'SKU / Código' },
+    { key: 'titulo', label: 'Título de publicación' },
+    { key: 'precioBase', label: 'Precio base (Sistema)' },
+    { key: 'regla', label: 'Regla de precio' },
+    { key: 'precioML', label: 'Precio actual en ML' },
+    { key: 'pm', label: 'PM responsable' },
+  ];
+
+  const colOptions = ['— Omitir —', ...fileColumns].map(c => `<option value="${c}">${c}</option>`).join('');
+
+  document.getElementById('mapperGrid').innerHTML = fields.map(f => `
+    <div class="mapper-item">
+      <label>${f.label}</label>
+      <select id="map_${f.key}">${colOptions}</select>
+    </div>
+  `).join('');
+
+  // Auto-detect common column names
+  const autoMap = {
+    sku: ['sku','codigo','código','item','id','ean','mpn'],
+    titulo: ['titulo','título','nombre','nombre publicación','title','publicacion','publicación'],
+    precioBase: ['precio','precio base','precio ml','precio sistema','precio_ml','base','costo','price'],
+    regla: ['regla','regla de precio','rule','price rule','precio regla','sincronizacion'],
+    precioML: ['precio ml actual','precio mercadolibre','ml precio','precio_actual','actual'],
+    pm: ['pm','product manager','responsable','categoria','categoría'],
+  };
+
+  fields.forEach(f => {
+    const sel = document.getElementById('map_'+f.key);
+    const match = fileColumns.find(col => autoMap[f.key]?.some(k => col.toLowerCase().includes(k)));
+    if (match) sel.value = match;
+  });
+
+  document.getElementById('mapperSection').style.display = 'block';
+}
+
+function showPreview() {
+  const rows = fileData.slice(0, 5);
+  const preview = document.getElementById('previewTable');
+  document.getElementById('previewCount').textContent = `${fileData.length} filas`;
+  preview.innerHTML = `<table>
+    <thead><tr>${fileColumns.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${fileColumns.map(c => `<td>${r[c]||''}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function applyMapping() {
+  const mapping = {
+    sku: document.getElementById('map_sku').value,
+    titulo: document.getElementById('map_titulo').value,
+    precioBase: document.getElementById('map_precioBase').value,
+    regla: document.getElementById('map_regla').value,
+    precioML: document.getElementById('map_precioML').value,
+    pm: document.getElementById('map_pm').value,
+  };
+
+  if (mapping.sku === '— Omitir —' && mapping.precioBase === '— Omitir —') {
+    toast('Necesitás mapear al menos SKU y Precio Base.', 'error');
+    return;
+  }
+
+  allData = fileData.map(row => {
+    const precioBase = parseFloat((row[mapping.precioBase] || '0').replace(/[$.,\s]/g, '').replace(',', '.')) || 0;
+    const precioML = mapping.precioML !== '— Omitir —' ? parseFloat((row[mapping.precioML] || '0').replace(/[$.,\s]/g, '').replace(',', '.')) || null : null;
+    const reglaName = mapping.regla !== '— Omitir —' ? (row[mapping.regla] || '').trim() : '';
+    const rule = rules.find(r => r.name.toLowerCase().includes(reglaName.toLowerCase()) || reglaName.toLowerCase().includes(r.name.toLowerCase()));
+    const expected = calcExpectedPrice(precioBase, rule ? rule.id : reglaName);
+    const status = getStatus(expected, precioML);
+    const diff = precioML !== null ? precioML - expected : null;
+
+    return {
+      sku: mapping.sku !== '— Omitir —' ? row[mapping.sku] : '',
+      titulo: mapping.titulo !== '— Omitir —' ? row[mapping.titulo] : '',
+      pm: mapping.pm !== '— Omitir —' ? row[mapping.pm] : '',
+      regla: reglaName,
+      reglaId: rule ? rule.id : '',
+      precioBase,
+      precioEsperado: expected,
+      precioML,
+      diferencia: diff,
+      estado: status,
+    };
+  }).filter(d => d.precioBase > 0);
+
+  filteredData = [...allData];
+  localStorage.setItem('pcData', JSON.stringify(allData));
+  updateStats();
+  renderTable();
+  showPanel('comparador', document.querySelector('.nav-tab'));
+  toast(`✓ ${allData.length} productos importados y calculados.`, 'success');
+}
+
+function resetImport() {
+  document.getElementById('mapperSection').style.display = 'none';
+  document.getElementById('fileInput').value = '';
+  fileData = []; fileColumns = [];
+}
+
+// ===========================
+// ML API
+// ===========================
+const ML_PROXY = '/api/ml-proxy';
+
+async function mlFetch(path, token) {
+  const res = await fetch(`${ML_PROXY}?path=${encodeURIComponent(path)}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  return res.json();
+}
+
+async function connectML() {
+  const token = document.getElementById('mlToken').value.trim();
+  if (!token) { toast('Ingresá el Access Token de ML.', 'error'); return; }
+
+  try {
+    const data = await mlFetch('users/me', token);
+    if (data.id) {
+      document.getElementById('mlSellerId').value = data.id;
+      document.getElementById('mlStatus').textContent = '✓ Conectado';
+      document.getElementById('mlStatus').className = 'conn-status ok';
+      document.getElementById('mlCard').classList.add('connected');
+      document.getElementById('mlInfo').innerHTML = `<strong>${data.nickname}</strong> — ${data.email}<br>País: ${data.country_id} · Vendedor ID: ${data.id}`;
+      document.getElementById('mlInfo').classList.add('visible');
+      config.mlSellerId = data.id;
+      saveConfig();
+      toast(`✓ Conectado como ${data.nickname}`, 'success');
+    } else {
+      throw new Error(data.message || 'Token inválido');
+    }
+  } catch (e) {
+    document.getElementById('mlStatus').textContent = '✕ Error';
+    document.getElementById('mlStatus').className = 'conn-status error';
+    toast('Error al conectar con ML: ' + e.message, 'error');
+  }
+}
+
+async function fetchMLPrices() {
+  const token = document.getElementById('mlToken').value.trim();
+  const sellerId = document.getElementById('mlSellerId').value.trim();
+  if (!token || !sellerId) { toast('Primero conectá ML.', 'error'); return; }
+
+  toast('Descargando precios de ML...', 'info');
+
+  try {
+    let offset = 0;
+    let items = [];
+    while (true) {
+      const data = await mlFetch(`users/${sellerId}/items/search?limit=100&offset=${offset}`, token);
+      if (!data.results || data.results.length === 0) break;
+      items = items.concat(data.results);
+      if (items.length >= data.paging.total) break;
+      offset += 100;
+    }
+
+    // Fetch prices in batches of 20
+    const mlPrices = {};
+    for (let i = 0; i < items.length; i += 20) {
+      const batch = items.slice(i, i + 20);
+      const ids = batch.join(',');
+      const data = await mlFetch(`items?ids=${ids}&attributes=id,price,title`, token);
+      if (Array.isArray(data)) {
+        data.forEach(r => {
+          if (r.code === 200) mlPrices[r.body.id] = { price: r.body.price, title: r.body.title };
+        });
+      }
+    }
+
+    // Update allData with ML prices (match by sku or item id)
+    let updated = 0;
+    allData = allData.map(item => {
+      const mlItem = mlPrices[item.sku] || Object.values(mlPrices).find(m => m.title === item.titulo);
+      if (mlItem) {
+        updated++;
+        const expected = calcExpectedPrice(item.precioBase, item.reglaId || item.regla);
+        const diff = mlItem.price - expected;
+        const status = getStatus(expected, mlItem.price);
+        return { ...item, precioML: mlItem.price, diferencia: diff, estado: status };
+      }
+      return item;
+    });
+
+    filteredData = [...allData];
+    localStorage.setItem('pcData', JSON.stringify(allData));
+    updateStats();
+    renderTable();
+    toast(`✓ Precios ML actualizados (${updated} coincidencias).`, 'success');
+  } catch (e) {
+    toast('Error al obtener precios de ML: ' + e.message, 'error');
+  }
+}
+
+// ===========================
+// GOOGLE SHEETS
+// ===========================
+async function connectSheets() {
+  const key = document.getElementById('sheetsApiKey').value.trim();
+  const id = document.getElementById('sheetsId1').value.trim();
+  const tab = document.getElementById('sheetsTab1').value.trim() || 'Hoja1';
+  if (!key || !id) { toast('Ingresá la API Key y el ID de la planilla.', 'error'); return; }
+
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(tab)}!A1:Z5?key=${key}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+    document.getElementById('sheetsStatus').textContent = '✓ Conectado';
+    document.getElementById('sheetsStatus').className = 'conn-status ok';
+    document.getElementById('sheetsCard').classList.add('connected');
+    saveConfig();
+    toast('✓ Google Sheets conectado correctamente.', 'success');
+  } catch (e) {
+    document.getElementById('sheetsStatus').textContent = '✕ Error';
+    document.getElementById('sheetsStatus').className = 'conn-status error';
+    toast('Error Sheets: ' + e.message, 'error');
+  }
+}
+
+async function fetchSheetData() {
+  const key = document.getElementById('sheetsApiKey').value.trim();
+  const id = document.getElementById('sheetsId1').value.trim();
+  const tab = document.getElementById('sheetsTab1').value.trim() || 'Hoja1';
+  if (!key || !id) { toast('Configurá Google Sheets primero.', 'error'); return; }
+  toast('Obteniendo datos de Sheets...', 'info');
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(tab)}!A1:Z5000?key=${key}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+    toast(`✓ ${(data.values?.length || 1) - 1} filas obtenidas de Sheets.`, 'success');
+  } catch (e) {
+    toast('Error al obtener Sheets: ' + e.message, 'error');
+  }
+}
+
+// ===========================
+// RUN COMPARISON
+// ===========================
+function runComparison() {
+  if (allData.length === 0) {
+    toast('Importá datos primero desde "Importar Ecom".', 'info');
+    showPanel('importar', document.querySelectorAll('.nav-tab')[1]);
+    return;
+  }
+  recalcAll();
+  applyFilters();
+  updateStats();
+  toast(`✓ Comparación completada — ${allData.length} productos.`, 'success');
+}
+
+// ===========================
+// EXPORT
+// ===========================
+function exportCSV() {
+  if (allData.length === 0) { toast('No hay datos para exportar.', 'error'); return; }
+  const headers = ['SKU','Título','PM','Regla','Precio Base','Precio Esperado','Precio ML','Diferencia','Estado'];
+  const rows = allData.map(d => [
+    d.sku, d.titulo, d.pm, d.regla,
+    d.precioBase, d.precioEsperado, d.precioML || '',
+    d.diferencia !== null ? d.diferencia : '', d.estado
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `price-check-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  toast('CSV exportado.', 'success');
+}
+
+// ===========================
+// DEMO DATA
+// ===========================
+function loadDemoData() {
+  const demoRules = ['ml_unitario','ml_premium_6c','ml_premium_12c','ml_mayor_3c','ml_fravega_6c','ecom','kit_unitario'];
+  const pms = ['PM1','PM2','PM3','PM4'];
+  allData = Array.from({length: 20}, (_, i) => {
+    const ruleId = demoRules[Math.floor(Math.random() * demoRules.length)];
+    const rule = rules.find(r => r.id === ruleId);
+    const precioBase = Math.round((Math.random() * 80000 + 10000) / 100) * 100;
+    const expected = calcExpectedPrice(precioBase, ruleId);
+    const variation = Math.random() > 0.6 ? (Math.random() - 0.5) * 0.1 : 0;
+    const precioML = Math.round(expected * (1 + variation) / 100) * 100;
+    const diff = precioML - expected;
+    const status = getStatus(expected, precioML);
+    return {
+      sku: `SKU-${1000 + i}`,
+      titulo: `Producto de ejemplo ${i + 1} — Modelo XZ${i}`,
+      pm: pms[Math.floor(Math.random() * pms.length)],
+      regla: rule?.name || ruleId,
+      reglaId: ruleId,
+      precioBase,
+      precioEsperado: expected,
+      precioML,
+      diferencia: diff,
+      estado: status,
+    };
+  });
+  filteredData = [...allData];
+  localStorage.setItem('pcData', JSON.stringify(allData));
+  updateStats();
+  renderTable();
+  toast('Datos de demo cargados.', 'info');
+}
+
+function clearData() {
+  allData = []; filteredData = [];
+  localStorage.removeItem('pcData');
+  updateStats();
+  renderTable();
+}
+
+// ===========================
+// NAVIGATION
+// ===========================
+function showPanel(name, tab) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  if (tab) tab.classList.add('active');
+}
+
+// ===========================
+// TOAST
+// ===========================
+function toast(msg, type = 'info') {
+  const container = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.innerHTML = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(100px)'; el.style.transition = 'all 0.3s'; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+init();
+</script>
+</body>
+</html>
