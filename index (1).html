@@ -1770,7 +1770,7 @@ async function loadDashboard(){qs('page-dashboard').innerHTML='<div class="loadi
   const filteredSheets=sheetsToLoad.filter(s=>!s.toLowerCase().includes('brasil'));
   const results=await Promise.all(filteredSheets.map(async sheet=>{
     try{
-      const rows=await fetchSheet(DASH_SHEET_ID,sheet);
+      const rows=await fetchSheet(DASH_SHEET_ID,sheet+'!A1:AM60000');
       const parsed=parseVentas(rows,sheet);
       if(parsed.length>0)console.log(`✓ ${sheet}: ${parsed.length} ventas`);
       else console.warn(`✗ ${sheet}: sin datos válidos (ignorada)`);
@@ -2218,7 +2218,7 @@ async function loadBrasil(){
     for(const sheet of [...new Set(sheets_to_try)]){
       if(brData.length>0)break; // stop after first successful sheet
       try{
-        const rows=await fetchSheet(DASH_SHEET_ID,sheet);
+        const rows=await fetchSheet(DASH_SHEET_ID,sheet+'!A1:AM60000');
         if(!rows||rows.length<2)continue;
         const H=rows[0].map(h=>(h||'').trim());
         const ci2=(...ns)=>{for(const n of ns){const i=H.findIndex(h=>h.toLowerCase()===n.toLowerCase());if(i>=0)return i;}return H.findIndex(h=>ns.some(n=>h.toLowerCase().includes(n.toLowerCase())));};
